@@ -50,3 +50,19 @@ class TestAttribute(util.TestCase):
             ["div", "0", "1", "2", "3", "pre", "4", "6"],
             flags=util.HTML5
         )
+
+    def test_bad_attribute_unclused(self):
+        """Test bad attribute fails for syntax error, not timeout error."""
+
+        self.assert_syntax_error_no_timeout('[a="' + ('x' * 300))
+
+    def test_bad_attribute_unclosed_single_quote(self):
+        """Test bad attribute with single quotes fails for syntax error, not timeout error."""
+
+        self.assert_syntax_error_no_timeout("[a='" + ('x' * 300))
+
+    def test_bad_attribute_unclosed_comparison(self):
+        """Test bad attribute with other comparisons fails for syntax error, not timeout error."""
+
+        self.assert_syntax_error_no_timeout('[a!="' + ('x' * 300))
+        self.assert_syntax_error_no_timeout("div [a^='" + ('x' * 300))

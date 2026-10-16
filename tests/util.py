@@ -2,6 +2,10 @@
 import unittest
 import bs4
 import textwrap
+import os
+import signal
+import subprocess
+import sys
 import soupsieve as sv
 import pytest
 
@@ -102,6 +106,60 @@ class TestCase(unittest.TestCase):
         print('----Running Assert Test----')
         with self.assertRaises(exception):
             self.compile_pattern(pattern, namespaces=namespace, custom=custom)
+
+    def assert_syntax_error_no_timeout(self, pattern, timeout=3):
+        """Assert pattern fails for syntax error, not timeout error (catastrophic regex backtracking)."""
+
+        print('----Running Assert Syntax Error Timeout Test----')
+        print('PATTERN: ', pattern)
+
+        if hasattr(signal, 'SIGALRM'):
+            def timeout_handler(signum, frame):
+                raise TimeoutError
+
+            previous = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout)
+
+            passed = False
+            try:
+                with self.assertRaises(sv.SelectorSyntaxError):
+                    sv.compile(pattern)
+                passed = True
+            except TimeoutError:
+                pass
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous)
+            self.assertTrue(passed)
+        else:
+            # No `SIGALRM` (Windows): compile in a child process that can be killed if it hangs.
+            # The child process is given extra time to account for interpreter startup.
+            code = (
+                'import sys\n'
+                'import soupsieve as sv\n'
+                'try:\n'
+                '    sv.compile(sys.stdin.read())\n'
+                'except sv.SelectorSyntaxError:\n'
+                '    sys.exit(0)\n'
+                'sys.exit(1)\n'
+            )
+            env = os.environ.copy()
+            path = os.path.dirname(os.path.dirname(os.path.abspath(sv.__file__)))
+            env['PYTHONPATH'] = os.pathsep.join([path, env['PYTHONPATH']]) if env.get('PYTHONPATH') else path
+
+            passed = False
+            try:
+                result = subprocess.run(
+                    [sys.executable, '-c', code],
+                    input=pattern,
+                    universal_newlines=True,
+                    env=env,
+                    timeout=timeout * 5
+                )
+                passed = result.returncode == 0
+            except subprocess.TimeoutExpired:
+                pass
+            self.assertTrue(passed)
 
     def assert_selector(self, markup, selectors, expected_ids, namespaces={}, custom=None, flags=0):
         """Assert selector."""
